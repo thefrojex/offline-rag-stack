@@ -1,0 +1,41 @@
+# secrets and local config
+.env
+.env.*
+!.env.example
+!.env.gpu.example
+
+# python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# models, volumes, bundles
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.onnx
+models/
+volumes/
+data/
+bundle/
+bundles/
+*.tar
+*.tar.gz
+*.tgz
+SHA256SUMS
+
+# editor / os
+.DS_Store
+.idea/
+.vscode/
+
+# eval output stays local unless committed on purpose
+eval/results/*.tmp
