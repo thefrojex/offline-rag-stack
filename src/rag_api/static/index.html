@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>offline-rag-stack</title>
+<style>
+  :root { --bg:#fafafa; --fg:#1b1f23; --muted:#5b6670; --card:#fff; --line:#d8dee4; --accent:#0b5fff; --ok:#1a7f37; --bad:#b42318; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171a; --fg:#e6e9ec; --muted:#9aa5b1; --card:#1c2024; --line:#2e353c; --accent:#6ea0ff; --ok:#56d364; --bad:#ff7b72; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; display:grid; gap:16px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  .sub { color: var(--muted); margin: 2px 0 0; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  input[type=text] { font:inherit; width:100%; padding:9px 10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .row > input[type=text] { flex:1; min-width:200px; }
+  #answer { white-space:pre-wrap; min-height:1.5em; margin-top:12px; }
+  .src { border-top:1px solid var(--line); margin-top:10px; padding-top:8px; }
+  .src b { font-weight:600; }
+  .src p { margin:4px 0 0; color:var(--muted); font-size:13px; white-space:pre-wrap; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:99px; border:1px solid var(--line); font-size:12px; margin-right:6px; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); }
+  ul { margin:8px 0 0; padding-left:18px; }
+  #status { font-size:13px; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>offline-rag-stack</h1>
+    <p class="sub">Ask questions about your documents. Everything runs on this machine.</p>
+    <p id="status">checking services...</p>
+  </header>
+
+  <section>
+    <h2>1. Add documents</h2>
+    <div class="row">
+      <input id="files" type="file" multiple accept=".pdf,.docx,.txt,.md">
+      <button id="upload">Upload</button>
+    </div>
+    <div id="upload-result" class="sub"></div>
+    <ul id="docs"></ul>
+  </section>
+
+  <section>
+    <h2>2. Ask a question</h2>
+    <div class="row">
+      <input id="question" type="text" placeholder="What does the handbook say about..." autocomplete="off">
+      <button id="ask">Ask</button>
+    </div>
+    <div id="answer" aria-live="polite"></div>
+    <div id="sources"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function refreshHealth() {
+  try {
+    const r = await fetch("/health");
+    const h = await r.json();
+    const parts = ["llm", "embeddings", "qdrant"].map(
+      (k) => `<span class="pill ${h[k].ok ? "ok" : "bad"}" title="${h[k].detail.replace(/"/g, "'")}">${k}: ${h[k].ok ? "ok" : "down"}</span>`
+    );
+    $("status").innerHTML = parts.join("");
+  } catch (e) {
+    $("status").textContent = "API unreachable";
+  }
+}
+
+async function refreshDocs() {
+  const r = await fetch("/documents");
+  const docs = r.ok ? await r.json() : [];
+  const list = $("docs");
+  list.replaceChildren();
+  for (const d of docs) {
+    const li = document.createElement("li");
+    li.textContent = `${d.filename} (${d.chunks} chunks) `;
+    const del = document.createElement("a");
+    del.href = "#";
+    del.textContent = "remove";
+    del.onclick = async (ev) => {
+      ev.preventDefault();
+      await fetch("/documents/" + encodeURIComponent(d.filename), { method: "DELETE" });
+      refreshDocs();
+    };
+    li.appendChild(del);
+    list.appendChild(li);
+  }
+}
+
+$("upload").onclick = async () => {
+  const files = $("files").files;
+  if (!files.length) { $("upload-result").textContent = "Choose at least one file."; return; }
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  $("upload").disabled = true;
+  $("upload-result").textContent = "Embedding... this can take a while on CPU.";
+  try {
+    const r = await fetch("/ingest", { method: "POST", body: form });
+    const body = await r.json();
+    $("upload-result").textContent = r.ok
+      ? body.results.map((x) => x.status === "ingested" ? `${x.filename}: ${x.chunks} chunks` : `${x.filename}: skipped (${x.reason})`).join("; ")
+      : "Upload failed: " + JSON.stringify(body);
+  } catch (e) {
+    $("upload-result").textContent = "Upload failed: " + e;
+  }
+  $("upload").disabled = false;
+  refreshDocs();
+};
+
+function renderSources(sources) {
+  const box = $("sources");
+  box.replaceChildren();
+  for (const s of sources) {
+    const div = document.createElement("div");
+    div.className = "src";
+    const head = document.createElement("b");
+    head.textContent = `[${s.n}] ${s.filename}, chunk ${s.chunk_index}`;
+    const score = document.createElement("span");
+    score.className = "sub";
+    score.textContent = `  score ${s.score}`;
+    const text = document.createElement("p");
+    text.textContent = s.text;
+    div.append(head, score, text);
+    box.appendChild(div);
+  }
+}
+
+async function ask() {
+  const question = $("question").value.trim();
+  if (!question) return;
+  $("ask").disabled = true;
+  $("answer").textContent = "";
+  $("sources").replaceChildren();
+  try {
+    const r = await fetch("/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, stream: true }),
+    });
+    if (!r.ok) { $("answer").textContent = "Error: " + (await r.text()); return; }
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut;
+      while ((cut = buffer.indexOf("\n\n")) >= 0) {
+        const raw = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        const name = (raw.match(/^event: (.*)$/m) || [])[1];
+        const data = JSON.parse((raw.match(/^data: (.*)$/m) || [, "null"])[1]);
+        if (name === "sources") renderSources(data);
+        else if (name === "token") $("answer").textContent += data;
+        else if (name === "error") $("answer").textContent += "\n[error] " + data;
+      }
+    }
+  } catch (e) {
+    $("answer").textContent = "Request failed: " + e;
+  } finally {
+    $("ask").disabled = false;
+  }
+}
+
+$("ask").onclick = ask;
+$("question").addEventListener("keydown", (ev) => { if (ev.key === "Enter") ask(); });
+refreshHealth();
+refreshDocs();
+setInterval(refreshHealth, 15000);
+</script>
+</body>
+</html>
