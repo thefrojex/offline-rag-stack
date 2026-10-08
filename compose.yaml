@@ -1,0 +1,180 @@
+name: offline-rag-stack
+
+# Every service the app runs on sits on `airgap`, an internal network with no route out.
+# `edge` is the single exception: it also joins `ingress` so the host can reach the UI,
+# and it firewalls its own egress (see docker/edge-entrypoint.sh).
+
+x-ollama-image: &ollama-image ollama/ollama:0.24.0
+
+services:
+  ollama:
+    image: *ollama-image
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: 24h
+      OLLAMA_MAX_LOADED_MODELS: "2"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_CONTEXT_LENGTH: "4096"
+    volumes:
+      - ollama_models:/root/.ollama
+    networks: [airgap]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  model-check:
+    image: *ollama-image
+    entrypoint: ["/bin/sh", "/scripts/check-models.sh"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      REQUIRED_MODELS: ${REQUIRED_OLLAMA_MODELS:-llama3.2:3b nomic-embed-text}
+    volumes:
+      - ./docker/check-models.sh:/scripts/check-models.sh:ro
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+    networks: [airgap]
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    restart: unless-stopped
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    networks: [airgap]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  rag-api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    image: offline-rag-stack/api:0.1.0
+    restart: unless-stopped
+    environment:
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434/v1}
+      LLM_MODEL: ${LLM_MODEL:-llama3.2:3b}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-400}
+      EMBED_BASE_URL: ${EMBED_BASE_URL:-http://ollama:11434/v1}
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+      QDRANT_URL: http://qdrant:6333
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      ollama:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      model-check:
+        condition: service_completed_successfully
+      vllm:
+        condition: service_healthy
+        required: false
+    networks: [airgap]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/livez', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  edge:
+    build:
+      context: .
+      dockerfile: docker/edge.Dockerfile
+    image: offline-rag-stack/edge:0.1.0
+    restart: unless-stopped
+    cap_add: [NET_ADMIN]
+    environment:
+      INTERNAL_CIDR: 10.231.10.0/24
+      UPSTREAM: rag-api:8000
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    depends_on:
+      rag-api:
+        condition: service_healthy
+    networks: [airgap, ingress]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8000/livez"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+
+  # NVIDIA hosts only: docker compose --profile gpu --env-file .env.gpu up
+  vllm:
+    profiles: [gpu]
+    image: vllm/vllm-openai:v0.11.0
+    restart: unless-stopped
+    command:
+      - --model
+      - ${VLLM_MODEL:-Qwen/Qwen2.5-3B-Instruct}
+      - --max-model-len
+      - "4096"
+    environment:
+      HF_HUB_OFFLINE: "1"
+    volumes:
+      - vllm_models:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks: [airgap]
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 120s
+
+  # Online machines only: downloads models into the shared volume. Has internet by design.
+  model-pull:
+    profiles: [online]
+    image: *ollama-image
+    entrypoint: ["/bin/sh", "/scripts/pull-models.sh"]
+    environment:
+      PULL_MODELS: ${PULL_MODELS:-llama3.2:3b nomic-embed-text}
+    volumes:
+      - ollama_models:/root/.ollama
+      - ./docker/pull-models.sh:/scripts/pull-models.sh:ro
+    networks: [online]
+
+networks:
+  airgap:
+    name: offline-rag-airgap
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.231.10.0/24
+  ingress:
+    name: offline-rag-ingress
+    ipam:
+      config:
+        - subnet: 10.231.20.0/24
+  online:
+    name: offline-rag-online
+
+volumes:
+  ollama_models:
+    name: offline-rag-ollama-models
+  qdrant_storage:
+    name: offline-rag-qdrant-storage
+  vllm_models:
+    name: offline-rag-vllm-models
