@@ -1,0 +1,62 @@
+[
+  {
+    "question": "How long does the crossing from Pier 4 to Gull Island take?",
+    "expected_file": "harborline-ferries-handbook.md",
+    "evidence": "crossing takes 35 minutes",
+    "answer_keywords": ["35"]
+  },
+  {
+    "question": "At what wind speed are Harborline sailings cancelled?",
+    "expected_file": "harborline-ferries-handbook.md",
+    "evidence": "wind exceeds 38 knots",
+    "answer_keywords": ["38"]
+  },
+  {
+    "question": "How long is a fare credit valid after a cancelled sailing?",
+    "expected_file": "harborline-ferries-handbook.md",
+    "evidence": "valid for 90 days",
+    "answer_keywords": ["90"]
+  },
+  {
+    "question": "What does it cost to bring a motorbike on the ferry?",
+    "expected_file": "harborline-ferries-handbook.md",
+    "evidence": "flat fee of 7 euros",
+    "answer_keywords": ["7 euro", "7 eur", "€7"]
+  },
+  {
+    "question": "How long does the ferry office keep lost property?",
+    "expected_file": "harborline-ferries-handbook.md",
+    "evidence": "held for 21 days",
+    "answer_keywords": ["21"]
+  },
+  {
+    "question": "When does the full database backup run at Kestrel?",
+    "expected_file": "kestrel-datacenter-runbook.md",
+    "evidence": "every Sunday at 01:00 UTC",
+    "answer_keywords": ["sunday"]
+  },
+  {
+    "question": "How much replication lag should trigger a database failover incident?",
+    "expected_file": "kestrel-datacenter-runbook.md",
+    "evidence": "above 90 seconds",
+    "answer_keywords": ["90"]
+  },
+  {
+    "question": "How many minutes can the UPS carry the load when utility power is lost?",
+    "expected_file": "kestrel-datacenter-runbook.md",
+    "evidence": "full load for 12 minutes",
+    "answer_keywords": ["12"]
+  },
+  {
+    "question": "What is the daily fine for an overdue DVD at the library?",
+    "expected_file": "maple-street-library-guide.txt",
+    "evidence": "overdue DVD is 50 cents per day",
+    "answer_keywords": ["50 cents", "$0.50", "0.50"]
+  },
+  {
+    "question": "How many days ahead can a study room be reserved?",
+    "expected_file": "maple-street-library-guide.txt",
+    "evidence": "up to 14 days in advance",
+    "answer_keywords": ["14"]
+  }
+]

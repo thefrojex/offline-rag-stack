@@ -1,0 +1,18 @@
+Maple Street Library: Member Guide
+
+Maple Street Library is a fictional branch written for this repository's test set. Nothing here describes a real library.
+
+OPENING HOURS
+The library is open Monday to Thursday from 09:00 to 20:00, on Friday from 09:00 to 17:00, and on Saturday from 10:00 to 16:00. It is closed on Sundays and on public holidays.
+
+LOANS AND FINES
+Books can be borrowed for 21 days and renewed once online. DVDs can be borrowed for 7 days and cannot be renewed. Reference books never leave the building. The fine for an overdue book is 15 cents per day, capped at 4 dollars per item. The fine for an overdue DVD is 50 cents per day. Members with more than 10 dollars in unpaid fines cannot borrow new items.
+
+STUDY ROOMS
+Members can reserve a study room up to 14 days in advance. A single booking lasts at most 2 hours. Rooms are held for 15 minutes after the start time and are then released to the next person on the waiting list.
+
+3D PRINTER
+The makerspace on the second floor has a 3D printer. Members must complete a 45 minute training session before they can use it. Printing costs 5 cents per gram of filament, and the maximum print size is 20 centimetres on each side.
+
+MEMBERSHIP
+Membership is free for residents of the Maple district. Out-of-district members pay 25 dollars per year. A library card replacement costs 3 dollars.
