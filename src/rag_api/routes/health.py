@@ -5,8 +5,9 @@ from collections.abc import Awaitable
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
+from rag_api import __version__
 from rag_api.deps import Deps, get_deps
-from rag_api.schemas import ComponentHealth, HealthResponse
+from rag_api.schemas import ComponentHealth, HealthResponse, InfoResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -34,3 +35,16 @@ async def health(deps: Deps = Depends(get_deps)) -> JSONResponse:  # noqa: B008
         status="ok" if healthy else "degraded", llm=llm, embeddings=embeddings, qdrant=qdrant
     )
     return JSONResponse(body.model_dump(), status_code=200 if healthy else 503)
+
+
+@router.get("/info", response_model=InfoResponse)
+async def info(deps: Deps = Depends(get_deps)) -> InfoResponse:  # noqa: B008
+    settings = deps.settings
+    return InfoResponse(
+        version=__version__,
+        llm_model=settings.llm_model,
+        embed_model=settings.embed_model,
+        top_k=settings.top_k,
+        chunk_size=settings.chunk_size,
+        chunk_overlap=settings.chunk_overlap,
+    )

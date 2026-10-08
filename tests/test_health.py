@@ -39,3 +39,14 @@ def test_health_names_the_component_that_is_down(settings: Settings) -> None:
         assert body[component]["ok"] is False
         others = {"llm", "embeddings", "qdrant"} - {component}
         assert all(body[name]["ok"] for name in others)
+
+
+def test_info_reports_active_models_and_chunking(client: TestClient, settings: Settings) -> None:
+    body = client.get("/info").json()
+    assert body["llm_model"] == settings.llm_model
+    assert body["embed_model"] == settings.embed_model
+    assert (body["chunk_size"], body["chunk_overlap"], body["top_k"]) == (
+        settings.chunk_size,
+        settings.chunk_overlap,
+        settings.top_k,
+    )

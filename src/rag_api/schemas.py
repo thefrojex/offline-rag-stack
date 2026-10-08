@@ -63,3 +63,12 @@ class HealthResponse(Frozen):
     llm: ComponentHealth
     embeddings: ComponentHealth
     qdrant: ComponentHealth
+
+
+class InfoResponse(Frozen):
+    version: str
+    llm_model: str
+    embed_model: str
+    top_k: int
+    chunk_size: int
+    chunk_overlap: int
