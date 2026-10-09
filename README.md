@@ -145,6 +145,8 @@ wget: download timed out
   dns blocked
 ```
 
+The only container with internet access is the dev-only `model-pull` helper (compose profile `online`), which exists to download models on an online machine and is never part of a normal `up`.
+
 **Capabilities.** The relay runs with `cap_drop: [ALL]` and `cap_add: [NET_ADMIN]`, plus `no-new-privileges`, a read-only root filesystem, and tmpfs only for `/run` and `/tmp`. NET_ADMIN is needed to install the iptables rules and nothing else is. This was checked on the running container:
 
 ```
@@ -188,7 +190,7 @@ Both were invisible to the unit tests and showed up only on the live stack.
 
 - Typed Python 3.12 with strict mypy, ruff, pydantic settings read from environment variables, and one-JSON-object-per-line logging.
 - Chunking splits on paragraphs, then sentences, then words, packs to a size limit, and overlaps on sentence boundaries so chunks do not start mid-sentence.
-- Every compose service has a healthcheck, and `depends_on` uses health and `service_completed_successfully` conditions. Services restart with `unless-stopped`.
+- Every long-running service has a healthcheck, and `depends_on` uses health and `service_completed_successfully` conditions. Long-running services restart with `unless-stopped`.
 - `/health` returns 503 and names the failing component (LLM, embeddings, or Qdrant). `/livez` is the container probe.
 - Unit tests mock the LLM, embedding and vector-store clients through plain protocols and an in-memory fake store, so the suite needs no models and no network. CI runs lint, type check and tests, validates the compose files, runs shellcheck, and downloads no models.
 
@@ -212,6 +214,7 @@ It writes `eval/results/latest.json`, including the hardware it ran on.
 - **`bundle.sh` was not tested end to end** because of disk space. The Ollama image alone is about 9 GB on disk and the machine had roughly 17 GB free. The script stages the payload and then tars it, so it needs on the order of twice the bundle size free (an estimate, not a measurement). `install-offline.sh` was therefore not run against a real bundle either, and a genuinely separate offline machine was never used. Treat both scripts as unverified until you run them.
 - **The vLLM path has never run on a real GPU.** The compose file and env switch validate, and that is all that was checked.
 - **Air-gap verification covers the probes it runs** (DNS, TCP 443, HTTP to one address, from five containers) on Docker Desktop for macOS. It is evidence, not a formal proof, and it was not repeated on Linux hosts.
+- **CI has not run on GitHub yet.** The same ruff, mypy and pytest commands pass locally. `shellcheck` is in the workflow but was never run, because it is not installed on the machine this was built on, so the shell scripts are unlinted.
 - **The relay keeps NET_ADMIN** (see Network design).
 - **No authentication or TLS.** The port is bound to `127.0.0.1` only. There is no multi-user access control, no per-document permissions, and no rate limiting.
 - **Single node**, no replication or high availability, and a single Qdrant collection.
