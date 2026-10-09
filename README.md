@@ -58,7 +58,7 @@ curl -N localhost:8000/query -H 'content-type: application/json' \
   -d '{"question": "When does the full database backup run?"}'
 ```
 
-`/query` streams server-sent events: one `sources` event with the numbered citations (file and chunk), then `token` events, then `done`. Send `"stream": false` for a single JSON response.
+`/query` streams server-sent events: one `sources` event with the numbered citations (file and chunk), then `token` events, then either `done` or, if generation fails, a single `error` event. Send `"stream": false` for a single JSON response.
 
 Useful targets: `make check` (ruff, mypy, pytest, none of which need models), `make logs`, `make down`, `make verify-airgap`, `make eval`.
 
@@ -192,7 +192,8 @@ Both were invisible to the unit tests and showed up only on the live stack.
 - Chunking splits on paragraphs, then sentences, then words, packs to a size limit, and overlaps on sentence boundaries so chunks do not start mid-sentence.
 - Every long-running service has a healthcheck, and `depends_on` uses health and `service_completed_successfully` conditions. Long-running services restart with `unless-stopped`.
 - `/health` returns 503 and names the failing component (LLM, embeddings, or Qdrant). `/livez` is the container probe.
-- Unit tests mock the LLM, embedding and vector-store clients through plain protocols and an in-memory fake store, so the suite needs no models and no network. CI runs lint, type check and tests, validates the compose files, runs shellcheck, and downloads no models.
+- **Upstream failures are explicit.** If the LLM, the embedding server or Qdrant times out, the API answers `504`; if they fail any other way (connection refused, an error status from the upstream), it answers `502`. Both carry a JSON body such as `{"error": {"type": "upstream_timeout", "component": "llm", "message": "...", "detail": "..."}}`, where `component` is `llm`, `embeddings` or `vector_store`. While streaming, the status line has already been sent, so the same payload arrives as an SSE `error` event and the stream ends without a `done`. Anything that is not a recognised upstream failure is still a plain `500` and is not disguised. The timeout is `LLM_TIMEOUT_S` (default 180 seconds) and applies to both the chat and embedding clients as a read timeout: for a non-streaming answer it is effectively the whole wait for the model, and for a streaming one it is the longest allowed gap between chunks.
+- Unit tests mock the LLM, embedding and vector-store clients through plain protocols and an in-memory fake store, so the suite needs no models and no network. CI runs lint, type check and tests, validates the compose files, runs shellcheck, and downloads no models. It passes on GitHub Actions.
 
 ## Evaluation
 
@@ -210,11 +211,10 @@ It writes `eval/results/latest.json`, including the hardware it ran on.
 
 - **Tested on an 8 GB Apple M2 only**, with Docker Desktop capped at 5 GB. That is too little for comfort: a 3B model, Docker's VM and macOS together left the host nearly out of memory.
 - **`llama3.2:3b` was very slow here.** Three answers took 75.5 s, 119.9 s and 120.9 s under memory pressure, well above a usable level. Those timings are probably swap-affected and are not a fair measure of the model, but they are what was observed. No faster model (`qwen2.5` 3B or 1.5B) was tried, so the default model is unproven for speed and was not compared on quality.
-- **No benchmark numbers.** The one eval run that got past ingest answered three questions, then a `/query` call returned a 500 and the script exited, so no result file was written. The host was critically low on memory at the time and the session was stopped for it. The cause of that 500 was not investigated, so it could be a timeout, an out-of-memory kill in the model server, or a bug.
+- **No benchmark numbers.** The one eval run that got past ingest answered three questions, then a `/query` call returned a 500 and the script exited, so no result file was written. The host was critically low on memory at the time and the session was stopped for it. The cause of that 500 was never confirmed, because the container logs were not recoverable. One candidate is the API's LLM timeout: it is 180 s (`LLM_TIMEOUT_S`), and the three answers took 75 to 121 s and were getting slower. Timeouts now return a `504` with a JSON error body (an SSE `error` event while streaming), and other upstream failures return a `502`, so a repeat would say what failed instead of an opaque 500. That mapping is covered by unit tests with mocked clients and has not been exercised against a real model or a real Qdrant outage.
 - **`bundle.sh` was not tested end to end** because of disk space. The Ollama image alone is about 9 GB on disk and the machine had roughly 17 GB free. The script stages the payload and then tars it, so it needs on the order of twice the bundle size free (an estimate, not a measurement). `install-offline.sh` was therefore not run against a real bundle either, and a genuinely separate offline machine was never used. Treat both scripts as unverified until you run them.
 - **The vLLM path has never run on a real GPU.** The compose file and env switch validate, and that is all that was checked.
 - **Air-gap verification covers the probes it runs** (DNS, TCP 443, HTTP to one address, from five containers) on Docker Desktop for macOS. It is evidence, not a formal proof, and it was not repeated on Linux hosts.
-- **CI has not run on GitHub yet.** The same ruff, mypy and pytest commands pass locally. `shellcheck` is in the workflow but was never run, because it is not installed on the machine this was built on, so the shell scripts are unlinted.
 - **The relay keeps NET_ADMIN** (see Network design).
 - **No authentication or TLS.** The port is bound to `127.0.0.1` only. There is no multi-user access control, no per-document permissions, and no rate limiting.
 - **Single node**, no replication or high availability, and a single Qdrant collection.
