@@ -6,9 +6,12 @@
 set -eu
 
 INTERNAL_CIDR="${INTERNAL_CIDR:-10.231.10.0/24}"
-UPSTREAM="${UPSTREAM:-rag-api:8000}"
+UPSTREAM="${UPSTREAM:-10.231.10.10:8000}"
 
+# Docker's embedded resolver (127.0.0.11) forwards lookups to the host's DNS, which would be a
+# way out for data. The upstream is addressed by IP, so the edge needs no name resolution at all.
 iptables -P OUTPUT DROP
+iptables -A OUTPUT -d 127.0.0.11 -j DROP
 iptables -A OUTPUT -o lo -j ACCEPT
 iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 iptables -A OUTPUT -d "$INTERNAL_CIDR" -j ACCEPT

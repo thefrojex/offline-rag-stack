@@ -39,6 +39,10 @@ if [ "$WITH_GPU" -eq 1 ]; then
   IMAGES=$(docker compose --profile gpu config --images | sort -u)
 fi
 
+for required in offline-rag-stack/edge offline-rag-stack/api; do
+  grep -q "^$required:" <<<"$IMAGES" || { echo "bundle is missing required image $required" >&2; exit 1; }
+done
+
 echo "== ensuring models are in the volume"
 OLLAMA_IMAGE=$(docker compose config --images | grep '^ollama/' | head -1)
 if ! docker volume inspect offline-rag-ollama-models >/dev/null 2>&1; then

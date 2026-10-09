@@ -76,7 +76,9 @@ services:
       vllm:
         condition: service_healthy
         required: false
-    networks: [airgap]
+    networks:
+      airgap:
+        ipv4_address: 10.231.10.10
     healthcheck:
       test:
         - CMD
@@ -94,10 +96,17 @@ services:
       dockerfile: docker/edge.Dockerfile
     image: offline-rag-stack/edge:0.1.0
     restart: unless-stopped
+    cap_drop: [ALL]
     cap_add: [NET_ADMIN]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /run
+      - /tmp
     environment:
       INTERNAL_CIDR: 10.231.10.0/24
-      UPSTREAM: rag-api:8000
+      UPSTREAM: 10.231.10.10:8000
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     depends_on:
