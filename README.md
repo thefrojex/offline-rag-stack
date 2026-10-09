@@ -57,8 +57,6 @@ make up            # builds the images (needs internet the first time), then run
 open http://127.0.0.1:8000
 ```
 
-Screenshot: docs/screenshot.png
-
 Upload a file from `eval/docs/`, then ask something about it. Or use the API:
 
 ```bash
