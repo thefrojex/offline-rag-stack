@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from rag_api.deps import Deps, get_deps
+from rag_api.errors import UpstreamError
 from rag_api.retrieval import build_messages, retrieve, to_sources
 from rag_api.schemas import QueryRequest, QueryResponse, Source
 
@@ -29,9 +30,23 @@ async def _stream_answer(
             if first_token_ms is None:
                 first_token_ms = round((time.perf_counter() - started) * 1000)
             yield _event("token", token)
+    except UpstreamError as exc:
+        logger.warning(
+            "generation failed upstream",
+            extra={"component": exc.component, "kind": exc.kind, "detail": exc.detail},
+        )
+        yield _event("error", exc.payload())
+        return
     except Exception as exc:
         logger.exception("generation failed")
-        yield _event("error", f"{type(exc).__name__}: {exc}"[:300])
+        yield _event(
+            "error",
+            {
+                "type": "internal_error",
+                "message": "generation failed",
+                "detail": type(exc).__name__,
+            },
+        )
         return
     logger.info(
         "query answered",

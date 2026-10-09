@@ -8,10 +8,12 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse
 
 from rag_api import __version__
+from rag_api.clients.guarded import GuardedChat, GuardedEmbedder, GuardedStore
 from rag_api.clients.openai_compat import OpenAIChat, OpenAIEmbedder
 from rag_api.clients.protocols import ChatModel, Embedder, VectorStore
 from rag_api.clients.qdrant_store import QdrantStore
 from rag_api.deps import Deps
+from rag_api.errors import UpstreamError, upstream_error_handler
 from rag_api.log import configure_logging
 from rag_api.routes import documents, health, query
 from rag_api.settings import Settings, get_settings
@@ -32,9 +34,9 @@ def create_app(
     configure_logging(resolved.log_level)
     deps = Deps(
         settings=resolved,
-        embedder=embedder or OpenAIEmbedder(resolved),
-        chat=chat or OpenAIChat(resolved),
-        store=store or QdrantStore(resolved.qdrant_url, resolved.qdrant_collection),
+        embedder=GuardedEmbedder(embedder or OpenAIEmbedder(resolved)),
+        chat=GuardedChat(chat or OpenAIChat(resolved)),
+        store=GuardedStore(store or QdrantStore(resolved.qdrant_url, resolved.qdrant_collection)),
     )
 
     @asynccontextmanager
@@ -53,6 +55,7 @@ def create_app(
 
     app = FastAPI(title="offline-rag-stack", version=__version__, lifespan=lifespan)
     app.state.deps = deps
+    app.add_exception_handler(UpstreamError, upstream_error_handler)
 
     @app.middleware("http")
     async def access_log(

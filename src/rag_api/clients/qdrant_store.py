@@ -62,6 +62,8 @@ class QdrantStore:
             await self._client.upsert(self._collection, points=points, wait=True)
 
     async def delete_document(self, filename: str) -> int:
+        if not await self._client.collection_exists(self._collection):
+            return 0
         before = await self._count(filename)
         if before:
             await self._client.delete(
@@ -78,6 +80,8 @@ class QdrantStore:
         return result.count
 
     async def search(self, vector: Sequence[float], limit: int) -> list[Hit]:
+        if not await self._client.collection_exists(self._collection):
+            return []
         response = await self._client.query_points(
             self._collection, query=list(vector), limit=limit, with_payload=True
         )
@@ -95,6 +99,8 @@ class QdrantStore:
         return hits
 
     async def list_documents(self) -> list[DocumentInfo]:
+        if not await self._client.collection_exists(self._collection):
+            return []
         counts: Counter[str] = Counter()
         offset: models.ExtendedPointId | None = None
         while True:

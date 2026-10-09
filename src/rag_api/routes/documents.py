@@ -45,12 +45,7 @@ async def ingest(files: list[UploadFile], deps: Deps = Depends(get_deps)) -> Ing
 
 @router.get("/documents", response_model=list[DocumentInfo])
 async def list_documents(deps: Deps = Depends(get_deps)) -> list[DocumentInfo]:  # noqa: B008
-    try:
-        return await deps.store.list_documents()
-    except Exception:
-        # an empty store has no collection yet
-        logger.info("document listing failed, treating store as empty", exc_info=True)
-        return []
+    return await deps.store.list_documents()
 
 
 @router.delete("/documents/{filename}")

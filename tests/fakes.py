@@ -19,11 +19,14 @@ def _bucket(token: str) -> int:
 class FakeEmbedder:
     """Bag-of-words hashing embedder: texts sharing words get similar vectors."""
 
-    def __init__(self, *, healthy: bool = True) -> None:
+    def __init__(self, *, healthy: bool = True, fail_with: Exception | None = None) -> None:
         self.healthy = healthy
+        self.fail_with = fail_with
         self.calls: list[list[str]] = []
 
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        if self.fail_with is not None:
+            raise self.fail_with
         self.calls.append(list(texts))
         vectors: list[list[float]] = []
         for text in texts:
@@ -42,19 +45,30 @@ class FakeEmbedder:
 
 class FakeChat:
     def __init__(
-        self, reply: str = "The answer is stated in the context [1].", *, healthy: bool = True
+        self,
+        reply: str = "The answer is stated in the context [1].",
+        *,
+        healthy: bool = True,
+        fail_with: Exception | None = None,
+        fail_after_tokens: int = 0,
     ) -> None:
         self.reply = reply
         self.healthy = healthy
+        self.fail_with = fail_with
+        self.fail_after_tokens = fail_after_tokens
         self.seen: list[list[ChatMessage]] = []
 
     async def stream(self, messages: Sequence[ChatMessage]) -> AsyncIterator[str]:
         self.seen.append(list(messages))
-        for word in self.reply.split(" "):
+        for position, word in enumerate(self.reply.split(" ")):
+            if self.fail_with is not None and position >= self.fail_after_tokens:
+                raise self.fail_with
             yield word + " "
 
     async def complete(self, messages: Sequence[ChatMessage]) -> str:
         self.seen.append(list(messages))
+        if self.fail_with is not None:
+            raise self.fail_with
         return self.reply
 
     async def ping(self) -> str:
@@ -64,20 +78,28 @@ class FakeChat:
 
 
 class FakeStore:
-    def __init__(self, *, healthy: bool = True) -> None:
+    def __init__(self, *, healthy: bool = True, fail_with: Exception | None = None) -> None:
         self.healthy = healthy
+        self.fail_with = fail_with
         self.rows: dict[str, list[StoredChunk]] = {}
 
+    def _maybe_fail(self) -> None:
+        if self.fail_with is not None:
+            raise self.fail_with
+
     async def ensure_collection(self, dim: int) -> None:
-        return None
+        self._maybe_fail()
 
     async def replace_document(self, filename: str, chunks: Sequence[StoredChunk]) -> None:
+        self._maybe_fail()
         self.rows[filename] = list(chunks)
 
     async def delete_document(self, filename: str) -> int:
+        self._maybe_fail()
         return len(self.rows.pop(filename, []))
 
     async def search(self, vector: Sequence[float], limit: int) -> list[Hit]:
+        self._maybe_fail()
         scored = [
             Hit(
                 filename=c.filename,
@@ -91,6 +113,7 @@ class FakeStore:
         return sorted(scored, key=lambda h: h.score, reverse=True)[:limit]
 
     async def list_documents(self) -> list[DocumentInfo]:
+        self._maybe_fail()
         return [DocumentInfo(filename=n, chunks=len(c)) for n, c in sorted(self.rows.items())]
 
     async def ping(self) -> str:
