@@ -2,6 +2,13 @@
 
 A self-hosted RAG system that runs with one `docker compose up` and never touches the internet at runtime. Local LLM (Ollama, or vLLM on NVIDIA), local embeddings, Qdrant, a FastAPI service with cited, streamed answers, and a small web UI. Every service sits on a Docker network with no route out, and a script proves it.
 
+## What this demonstrates
+
+- **Zero-egress network design:** every application service sits on an `internal: true` network, and the one container that publishes a port is a firewalled relay.
+- **Automated air-gap verification:** a script probes DNS, TCP and HTTP from every container and fails if anything gets out.
+- **Explicit failure handling:** LLM, embedding and Qdrant timeouts return 504, other upstream failures return 502, and streaming answers send an SSE error event.
+- **Two real bugs found on the live stack:** a DNS leak and a logging crash, each fixed with a regression test.
+
 ## Why air-gapped deployment matters
 
 Many of the organisations that most want document Q&A cannot send documents to a hosted API: hospitals and insurers bound by health-privacy rules, banks and defence suppliers with contractual data controls, government bodies with sovereignty requirements, and anyone whose documents are simply too sensitive to leave the building. For them the useful questions are different from a demo's: can it be installed from a USB drive, can you show that nothing leaves the host, and can IT audit what runs. This repo is a small, honest reference for that deployment shape. It is a portfolio project, not a hardened product; see [Limitations](#limitations).
@@ -49,6 +56,8 @@ make pull-models   # one-time download into a Docker volume, the only step that 
 make up            # builds the images (needs internet the first time), then runs with no network
 open http://127.0.0.1:8000
 ```
+
+Screenshot: docs/screenshot.png
 
 Upload a file from `eval/docs/`, then ask something about it. Or use the API:
 
@@ -209,18 +218,19 @@ It writes `eval/results/latest.json`, including the hardware it ran on.
 
 ## Limitations
 
-- **Tested on an 8 GB Apple M2 only**, with Docker Desktop capped at 5 GB. That is too little for comfort: a 3B model, Docker's VM and macOS together left the host nearly out of memory.
-- **`llama3.2:3b` was very slow here.** Three answers took 75.5 s, 119.9 s and 120.9 s under memory pressure, well above a usable level. Those timings are probably swap-affected and are not a fair measure of the model, but they are what was observed. No faster model (`qwen2.5` 3B or 1.5B) was tried, so the default model is unproven for speed and was not compared on quality.
-- **No benchmark numbers.** The one eval run that got past ingest answered three questions, then a `/query` call returned a 500 and the script exited, so no result file was written. The host was critically low on memory at the time and the session was stopped for it. The cause of that 500 was never confirmed, because the container logs were not recoverable. One candidate is the API's LLM timeout: it is 180 s (`LLM_TIMEOUT_S`), and the three answers took 75 to 121 s and were getting slower. Timeouts now return a `504` with a JSON error body (an SSE `error` event while streaming), and other upstream failures return a `502`, so a repeat would say what failed instead of an opaque 500. That mapping is covered by unit tests with mocked clients and has not been exercised against a real model or a real Qdrant outage.
-- **`bundle.sh` was not tested end to end** because of disk space. The Ollama image alone is about 9 GB on disk and the machine had roughly 17 GB free. The script stages the payload and then tars it, so it needs on the order of twice the bundle size free (an estimate, not a measurement). `install-offline.sh` was therefore not run against a real bundle either, and a genuinely separate offline machine was never used. Treat both scripts as unverified until you run them.
-- **The vLLM path has never run on a real GPU.** The compose file and env switch validate, and that is all that was checked.
-- **Air-gap verification covers the probes it runs** (DNS, TCP 443, HTTP to one address, from five containers) on Docker Desktop for macOS. It is evidence, not a formal proof, and it was not repeated on Linux hosts.
-- **The relay keeps NET_ADMIN** (see Network design).
-- **No authentication or TLS.** The port is bound to `127.0.0.1` only. There is no multi-user access control, no per-document permissions, and no rate limiting.
-- **Single node**, no replication or high availability, and a single Qdrant collection.
-- **Parsing is text extraction only**: no OCR for scanned PDFs and no table understanding. Retrieval is dense vectors only, with no reranking or hybrid search.
-- **Image pinning is partial.** Only the relay's base image is pinned by digest. Other images use version tags, and Python dependencies are locked in `uv.lock`.
-- Answers come from a small local model and can be wrong. The citations show which chunks were used; they do not guarantee the answer is faithful to them.
+- **Tested on one 8 GB Apple M2,** with Docker Desktop capped at 5 GB; the host ran nearly out of memory.
+- **`llama3.2:3b` was slow:** answers took 75.5 s, 119.9 s and 120.9 s, probably swap-affected. No other model (`qwen2.5` 3B or 1.5B) was tried or compared.
+- **No benchmark numbers:** the only eval run returned a 500 after three answers, so no results file was written.
+- **That 500 was never diagnosed** (the container logs were lost); the 180 s `LLM_TIMEOUT_S` is one candidate. Timeouts now return 504 and other upstream failures 502, tested with mocked clients only.
+- **`bundle.sh` and `install-offline.sh` are untested end to end:** the ~9 GB Ollama image left too little disk (about 17 GB free), `bundle.sh` stages before it tars so it likely needs about twice the bundle size free (an estimate), and no separate offline machine was used.
+- **The vLLM path has never run on a real GPU;** only the compose file and env switch were validated.
+- **Air-gap checks are evidence, not proof:** DNS, TCP 443 and HTTP probes from five containers, on Docker Desktop for macOS only, not on Linux.
+- **The relay keeps NET_ADMIN** (see [Network design](#network-design)).
+- **No authentication or TLS,** no per-document permissions and no rate limiting; the port is bound to `127.0.0.1` only.
+- **Single node:** no replication or high availability, and one Qdrant collection.
+- **Text-only parsing and dense-only retrieval:** no OCR or table understanding, no reranking or hybrid search.
+- **Partial image pinning:** only the relay's base image is pinned by digest; Python dependencies are locked in `uv.lock`.
+- **Small local model:** answers can be wrong, and citations show which chunks were used without guaranteeing the answer is faithful to them.
 
 ## Repository layout
 
