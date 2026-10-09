@@ -36,7 +36,7 @@ async def ingest_document(
     logger.info(
         "document ingested",
         extra={
-            "filename": filename,
+            "document": filename,
             "chunks": len(chunks),
             "duration_ms": round((time.perf_counter() - started) * 1000),
         },

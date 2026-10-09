@@ -1,7 +1,10 @@
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
+from rag_api.main import create_app
+from rag_api.settings import Settings
 from tests.fakes import FakeChat, FakeEmbedder, FakeStore
 
 
@@ -114,3 +117,20 @@ def test_index_page_is_served(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert "offline-rag-stack" in response.text
+
+
+def test_info_level_logging_works_and_emits_json(
+    capsys: pytest.CaptureFixture[str], settings: Settings
+) -> None:
+    verbose = settings.model_copy(update={"log_level": "INFO"})
+    app = create_app(verbose, embedder=FakeEmbedder(), chat=FakeChat(), store=FakeStore())
+    with TestClient(app) as client:
+        client.post("/ingest", files=[("files", ("ops.md", b"Backups run nightly."))])
+        client.post("/query", json={"question": "When?", "stream": False})
+        client.post("/query", json={"question": "When?"})
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+    messages = {r["msg"] for r in records}
+    assert {"document ingested", "request", "query answered"} <= messages
+    ingested = next(r for r in records if r["msg"] == "document ingested")
+    assert ingested["document"] == "ops.md"
+    assert ingested["chunks"] == 1
